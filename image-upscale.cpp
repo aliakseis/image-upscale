@@ -109,47 +109,55 @@ int main(int argc, char** argv)
                 filename = s + "samples/data/lena.jpg";
             }
         }
-        cv::Mat src = cv::imread(filename, cv::IMREAD_GRAYSCALE);
+        cv::Mat img = cv::imread(filename);
 
-        imshow("Original", src);
+        imshow("Original", img);
 
+        std::vector<cv::Mat> bgr;
+        split(img, bgr);
 
-        LbfgsContext context{ {src.cols, src.rows}, src };
+        for (auto& src : bgr)
+        {
+            LbfgsContext context{ {src.cols, src.rows}, src };
 
-        const double param_c = 5;
+            const double param_c = 5;
 
-        const int numImgPixels = src.rows * src.cols * 4;
+            const int numImgPixels = src.rows * src.cols * 4;
 
-        // Initialize solution vector
-        lbfgsfloatval_t fx;
-        lbfgsfloatval_t *x = lbfgs_malloc(numImgPixels);
-        if (x == nullptr) {
-            //
+            // Initialize solution vector
+            lbfgsfloatval_t fx;
+            lbfgsfloatval_t *x = lbfgs_malloc(numImgPixels);
+            if (x == nullptr) {
+                //
+            }
+            for (int i = 0; i < numImgPixels; i++) {
+                x[i] = 1;
+            }
+
+            // Initialize the parameters for the optimization.
+            lbfgs_parameter_t param;
+            lbfgs_parameter_init(&param);
+            param.orthantwise_c = param_c; // this tells lbfgs to do OWL-QN
+            param.linesearch = LBFGS_LINESEARCH_BACKTRACKING;
+            int lbfgs_ret = lbfgs(numImgPixels, x, &fx, evaluate, progress, &context, &param);
+
+            cv::Mat Xat2(context.originalSize.height * 2, context.originalSize.width * 2, CV_64FC1, x);
+            cv::Mat Xa;
+            idct(Xat2, Xa);
+
+            lbfgs_free(x);
+
+            Xa.convertTo(src, CV_8U);
         }
-        for (int i = 0; i < numImgPixels; i++) {
-            x[i] = 1;
-        }
-
-        // Initialize the parameters for the optimization.
-        lbfgs_parameter_t param;
-        lbfgs_parameter_init(&param);
-        param.orthantwise_c = param_c; // this tells lbfgs to do OWL-QN
-        param.linesearch = LBFGS_LINESEARCH_BACKTRACKING;
-        int lbfgs_ret = lbfgs(numImgPixels, x, &fx, evaluate, progress, &context, &param);
-
-        cv::Mat Xat2(context.originalSize.height * 2, context.originalSize.width * 2, CV_64FC1, x);
-        cv::Mat Xa;
-        idct(Xat2, Xa);
-
-        lbfgs_free(x);
 
         cv::Mat dst;
-        Xa.convertTo(dst, CV_8U);
-
-        imshow("Restored", dst);
+        merge(bgr, dst);
+        imshow("Result", dst);
 
         cv::waitKey();
 
+        if (argc >= 3)
+            cv::imwrite(argv[2], dst);
     }
     catch (const std::exception& ex) {
         std::cerr << typeid(ex).name() << ": " << ex.what() << '\n';

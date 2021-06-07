@@ -7,25 +7,12 @@
 
 #include <lbfgs.h>
 
-#define USE_FFTW 0
-
-#if USE_FFTW
-#include <fftw3.h>
-#endif
 
 #include <algorithm>
 #include <iostream>
-#include <random>
-#include <map>
 #include <vector>
 #include <exception>
 
-
-
-struct LbfgsContext {
-    cv::Size originalSize;
-    const cv::Mat& b;
-};
 
 static int progress(
     void *instance,
@@ -51,10 +38,10 @@ static lbfgsfloatval_t evaluate(
     const lbfgsfloatval_t step
 )
 {
-    auto context = static_cast<LbfgsContext*>(instance);
+    auto src = static_cast<cv::Mat*>(instance);
 
-    const cv::Mat x2(context->originalSize.height * 2,
-        context->originalSize.width * 2,
+    const cv::Mat x2(src->rows * 2,
+        src->cols * 2,
         CV_64FC1,
         const_cast<void*>(static_cast<const void*>(x)));
 
@@ -63,15 +50,15 @@ static lbfgsfloatval_t evaluate(
 
     double fx = 0;
 
-    for (int y = 0; y < context->originalSize.height; ++y)
-        for (int x = 0; x < context->originalSize.width; ++x)
+    for (int y = 0; y < src->rows; ++y)
+        for (int x = 0; x < src->cols; ++x)
         {
             const auto v = (Ax2.at<double>(y * 2, x * 2)
                 + Ax2.at<double>(y * 2, x * 2 + 1)
                 + Ax2.at<double>(y * 2 + 1, x * 2)
                 + Ax2.at<double>(y * 2 + 1, x * 2 + 1)) / 4;
 
-            const auto Ax = v - context->b.at<uchar>(y, x);
+            const auto Ax = v - src->at<uchar>(y, x);
 
             Ax2.at<double>(y * 2, x * 2)
                 = Ax2.at<double>(y * 2, x * 2 + 1)
@@ -82,8 +69,8 @@ static lbfgsfloatval_t evaluate(
             fx += Ax * Ax * 4;
         }
 
-    cv::Mat AtAxb2(context->originalSize.height * 2,
-        context->originalSize.width * 2,
+    cv::Mat AtAxb2(src->rows * 2,
+        src->cols * 2,
         CV_64FC1,
         g);
     cv::dct(Ax2, AtAxb2);
@@ -118,8 +105,6 @@ int main(int argc, char** argv)
 
         for (auto& src : bgr)
         {
-            LbfgsContext context{ {src.cols, src.rows}, src };
-
             const double param_c = 5;
 
             const int numImgPixels = src.rows * src.cols * 4;
@@ -128,7 +113,7 @@ int main(int argc, char** argv)
             lbfgsfloatval_t fx;
             lbfgsfloatval_t *x = lbfgs_malloc(numImgPixels);
             if (x == nullptr) {
-                //
+                return EXIT_FAILURE;
             }
             for (int i = 0; i < numImgPixels; i++) {
                 x[i] = 1;
@@ -139,9 +124,9 @@ int main(int argc, char** argv)
             lbfgs_parameter_init(&param);
             param.orthantwise_c = param_c; // this tells lbfgs to do OWL-QN
             param.linesearch = LBFGS_LINESEARCH_BACKTRACKING;
-            int lbfgs_ret = lbfgs(numImgPixels, x, &fx, evaluate, progress, &context, &param);
+            int lbfgs_ret = lbfgs(numImgPixels, x, &fx, evaluate, progress, &src, &param);
 
-            cv::Mat Xat2(context.originalSize.height * 2, context.originalSize.width * 2, CV_64FC1, x);
+            cv::Mat Xat2(src.rows * 2, src.cols * 2, CV_64FC1, x);
             cv::Mat Xa;
             idct(Xat2, Xa);
 

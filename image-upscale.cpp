@@ -132,6 +132,15 @@ int main(int argc, char** argv)
 
             lbfgs_free(x);
 
+            const cv::Mat sharpening_kernel = (cv::Mat_<double>(3, 3) 
+                //<< -1, -1, -1,
+                //-1, 9, -1,
+                //-1, -1, -1);
+                << 0, -1, 0,
+                -1, 5, -1,
+                0, -1, 0);
+            filter2D(Xa, Xa, -1, sharpening_kernel);
+
             Xa.convertTo(src, CV_8U);
         }
 

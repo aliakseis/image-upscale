@@ -14,6 +14,8 @@
 #include <exception>
 
 
+enum { SCALE = 2 };
+
 static int progress(
     void *instance,
     const lbfgsfloatval_t *x,
@@ -40,8 +42,8 @@ static lbfgsfloatval_t evaluate(
 {
     auto src = static_cast<cv::Mat*>(instance);
 
-    const cv::Mat x2(src->rows * 2,
-        src->cols * 2,
+    const cv::Mat x2(src->rows * SCALE,
+        src->cols * SCALE,
         CV_64FC1,
         const_cast<void*>(static_cast<const void*>(x)));
 
@@ -53,24 +55,24 @@ static lbfgsfloatval_t evaluate(
     for (int y = 0; y < src->rows; ++y)
         for (int x = 0; x < src->cols; ++x)
         {
-            const auto v = (Ax2.at<double>(y * 2, x * 2)
-                + Ax2.at<double>(y * 2, x * 2 + 1)
-                + Ax2.at<double>(y * 2 + 1, x * 2)
-                + Ax2.at<double>(y * 2 + 1, x * 2 + 1)) / 4;
+            double v = 0;
+            for (int yy = 0; yy < SCALE; ++yy)
+                for (int xx = 0; xx < SCALE; ++xx)
+                    v += Ax2.at<double>(y * SCALE + yy, x * SCALE + xx);
+
+            v /= SCALE * SCALE;
 
             const auto Ax = v - src->at<uchar>(y, x);
 
-            Ax2.at<double>(y * 2, x * 2)
-                = Ax2.at<double>(y * 2, x * 2 + 1)
-                = Ax2.at<double>(y * 2 + 1, x * 2)
-                = Ax2.at<double>(y * 2 + 1, x * 2 + 1)
-                = Ax;
+            for (int yy = 0; yy < SCALE; ++yy)
+                for (int xx = 0; xx < SCALE; ++xx)
+                    Ax2.at<double>(y * SCALE + yy, x * SCALE + xx) = Ax;
 
-            fx += Ax * Ax * 4;
+            fx += Ax * Ax * SCALE * SCALE;
         }
 
-    cv::Mat AtAxb2(src->rows * 2,
-        src->cols * 2,
+    cv::Mat AtAxb2(src->rows * SCALE,
+        src->cols * SCALE,
         CV_64FC1,
         g);
     cv::dct(Ax2, AtAxb2);
@@ -107,7 +109,7 @@ int main(int argc, char** argv)
         {
             const double param_c = 5;
 
-            const int numImgPixels = src.rows * src.cols * 4;
+            const int numImgPixels = src.rows * src.cols * SCALE * SCALE;
 
             // Initialize solution vector
             lbfgsfloatval_t fx;
@@ -126,20 +128,24 @@ int main(int argc, char** argv)
             param.linesearch = LBFGS_LINESEARCH_BACKTRACKING;
             int lbfgs_ret = lbfgs(numImgPixels, x, &fx, evaluate, progress, &src, &param);
 
-            cv::Mat Xat2(src.rows * 2, src.cols * 2, CV_64FC1, x);
+            cv::Mat Xat2(src.rows * SCALE, src.cols * SCALE, CV_64FC1, x);
             cv::Mat Xa;
             idct(Xat2, Xa);
 
             lbfgs_free(x);
 
-            const cv::Mat sharpening_kernel = (cv::Mat_<double>(3, 3) 
-                //<< -1, -1, -1,
-                //-1, 9, -1,
-                //-1, -1, -1);
+            const cv::Mat sharpening_kernel = (cv::Mat_<double>(3, 3)
                 << 0, -1, 0,
-                -1, 5, -1,
+                -1, 4, -1,
                 0, -1, 0);
-            filter2D(Xa, Xa, -1, sharpening_kernel);
+            cv::Mat sharpened;
+            filter2D(Xa, sharpened, -1, sharpening_kernel);
+            cv::Mat contrastMask = abs(sharpened);
+            contrastMask.convertTo(contrastMask, CV_8U);
+            cv::threshold(contrastMask, contrastMask, 0, 255, cv::THRESH_BINARY | cv::THRESH_TRIANGLE);
+
+            sharpened += Xa;
+            sharpened.copyTo(Xa, contrastMask);
 
             Xa.convertTo(src, CV_8U);
         }

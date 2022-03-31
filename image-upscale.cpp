@@ -62,7 +62,7 @@ static lbfgsfloatval_t evaluate(
 
             v /= SCALE * SCALE;
 
-            const auto Ax = v - src->at<uchar>(y, x);
+            const auto Ax = v - src->at<float>(y, x);
 
             for (int yy = 0; yy < SCALE; ++yy)
                 for (int xx = 0; xx < SCALE; ++xx)
@@ -107,9 +107,14 @@ int main(int argc, char** argv)
 
         for (auto& src : bgr)
         {
+            src.convertTo(src, CV_32F);
+
             const double param_c = 5;
 
             const int numImgPixels = src.rows * src.cols * SCALE * SCALE;
+
+            const auto mean = cv::mean(src);
+            src -= mean;
 
             // Initialize solution vector
             lbfgsfloatval_t fx;
@@ -133,6 +138,8 @@ int main(int argc, char** argv)
             idct(Xat2, Xa);
 
             lbfgs_free(x);
+
+            Xa += mean;
 
             const cv::Mat sharpening_kernel = (cv::Mat_<double>(3, 3)
                 << 0, -1, 0,

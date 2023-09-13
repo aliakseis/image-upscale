@@ -62,7 +62,9 @@ static lbfgsfloatval_t evaluate(
 
             v /= SCALE * SCALE;
 
-            const auto Ax = v - src->at<float>(y, x);
+            auto Ax = v - src->at<float>(y, x);
+            if (std::abs(Ax) < 0.5)
+                Ax = 0;
 
             for (int yy = 0; yy < SCALE; ++yy)
                 for (int xx = 0; xx < SCALE; ++xx)
